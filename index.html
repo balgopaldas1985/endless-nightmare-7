@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Endless Nightmare 7: Martial Horror</title>
+    
+    <!-- BabylonJS Core & Materials Library -->
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
+    
+    <style>
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Courier New', Courier, monospace;
+            touch-action: none;
+            user-select: none;
+        }
+
+        #renderCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        /* Mobile UI Overlay */
+        #uiOverlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        /* Health & Stance HUD */
+        #hud {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            color: #ff3333;
+            text-shadow: 0 0 10px #ff0000;
+        }
+        .bar-bg {
+            width: 180px;
+            height: 14px;
+            background: rgba(50, 0, 0, 0.6);
+            border: 2px solid #ff3333;
+            border-radius: 4px;
+            margin-top: 5px;
+            overflow: hidden;
+        }
+        #healthBar {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, #aa0000, #ff3333);
+        }
+
+        /* Virtual Joystick */
+        #joystickZone {
+            position: absolute;
+            bottom: 30px;
+            left: 30px;
+            width: 120px;
+            height: 120px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            pointer-events: auto;
+        }
+        #joystickKnob {
+            position: absolute;
+            top: 35px;
+            left: 35px;
+            width: 50px;
+            height: 50px;
+            background: rgba(255, 0, 0, 0.5);
+            border: 2px solid #ff3333;
+            border-radius: 50%;
+        }
+
+        /* Touch Camera Drag Area */
+        #cameraZone {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 60%;
+            height: 100%;
+            pointer-events: auto;
+        }
+
+        /* Combat & Action Buttons */
+        .action-btn {
+            position: absolute;
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: rgba(20, 0, 0, 0.7);
+            border: 2px solid #ff3333;
+            color: #fff;
+            font-weight: bold;
+            font-size: 13px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            pointer-events: auto;
+            box-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
+        }
+        .action-btn:active {
+            background: #ff0000;
+            transform: scale(0.95);
+        }
+
+        #btnKungFu { bottom: 40px; right: 40px; width: 85px; height: 85px; font-size: 15px; border-color: #ffcc00; color: #ffcc00; }
+        #btnJump { bottom: 140px; right: 30px; }
+        #btnFlashlight { bottom: 130px; right: 120px; }
+
+        /* Crosshair */
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 8px;
+            height: 8px;
+            background: rgba(255, 255, 255, 0.6);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        /* Jumpscare / Game Over Screen */
+        #jumpscare {
+            display: none;
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #000;
+            z-index: 100;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            color: #ff0000;
+        }
+        #jumpscare h1 { font-size: 3rem; text-shadow: 0 0 20px #ff0000; margin-bottom: 20px; }
+        #btnRestart {
+            padding: 15px 30px; background: #330000; border: 2px solid #ff0000;
+            color: #fff; font-size: 1.2rem; cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="renderCanvas"></canvas>
+
+    <div id="uiOverlay">
+        <div id="hud">
+            <div><strong>ENDLESS NIGHTMARE VII</strong></div>
+            <div>STAMINA / HEALTH</div>
+            <div class="bar-bg"><div id="healthBar"></div></div>
+        </div>
+
+        <div id="crosshair"></div>
+        <div id="joystickZone"><div id="joystickKnob"></div></div>
+        <div id="cameraZone"></div>
+
+        <button id="btnKungFu" class="action-btn">KUNG-FU<br>STRIKE</button>
+        <button id="btnJump" class="action-btn">JUMP</button>
+        <button id="btnFlashlight" class="action-btn">LIGHT</button>
+    </div>
+
+    <div id="jumpscare">
+        <h1>YOU WERE CONSUMED</h1>
+        <button id="btnRestart" onclick="location.reload()">RETRY CHAPTER</button>
+    </div>
+
+    <script>
+        // --- Web Audio Synthesizer (Realistic Procedural Sound Effects) ---
+        const AudioFX = {
+            ctx: null,
+            init() {
+                this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+            },
+            playKungFuSwing() {
+                if (!this.ctx) return;
+                let osc = this.ctx.createOscillator();
+                let gain = this.ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(400, this.ctx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(80, this.ctx.currentTime + 0.15);
+                gain.gain.setValueAtTime(0.5, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+                osc.connect(gain); gain.connect(this.ctx.destination);
+                osc.start(); osc.stop(this.ctx.currentTime + 0.15);
+            },
+            playHitSound() {
+                if (!this.ctx) return;
+                let bufferSize = this.ctx.sampleRate * 0.1;
+                let buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+                let output = buffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
+                let whiteNoise = this.ctx.createBufferSource();
+                whiteNoise.buffer = buffer;
+                let gain = this.ctx.createGain();
+                gain.gain.setValueAtTime(0.8, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.1);
+                whiteNoise.connect(gain); gain.connect(this.ctx.destination);
+                whiteNoise.start();
+            },
+            playFlashlightClick() {
+                if (!this.ctx) return;
+                let osc = this.ctx.createOscillator();
+                let gain = this.ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(1200, this.ctx.currentTime);
+                gain.gain.setValueAtTime(0.3, this.ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.05);
+                osc.connect(gain); gain.connect(this.ctx.destination);
+                osc.start(); osc.stop(this.ctx.currentTime + 0.05);
+            }
+        };
+
+        // --- 3D Game Engine Setup ---
+        const canvas = document.getElementById("renderCanvas");
+        const engine = new BABYLON.Engine(canvas, true);
+
+        const createScene = function () {
+            const scene = new BABYLON.Scene(engine);
+            scene.clearColor = new BABYLON.Color3(0.02, 0.02, 0.03);
+            
+            // Fog settings for high atmosphere
+            scene.fogMode = BABYLON.Scene.FOGMODE_EXP2;
+            scene.fogDensity = 0.08;
+            scene.fogColor = new BABYLON.Color3(0.02, 0.02, 0.03);
+
+            // First Person Camera
+            const camera = new BABYLON.UniversalCamera("playerCam", new BABYLON.Vector3(0, 1.7, 0), scene);
+            camera.minZ = 0.2;
+            camera.fov = 1.1;
+
+            // Flashlight (Spotlight)
+            const flashlight = new BABYLON.SpotLight("flashlight", new BABYLON.Vector3(0, 0, 0), new BABYLON.Vector3(0, 0, 1), Math.PI / 3, 20, scene);
+            flashlight.intensity = 2.5;
+            flashlight.diffuse = new BABYLON.Color3(1, 0.9, 0.7);
+            flashlight.parent = camera;
+
+            // Ambient darkness light
+            const ambient = new BABYLON.HemisphericLight("ambient", new BABYLON.Vector3(0, 1, 0), scene);
+            ambient.intensity = 0.15;
+
+            // --- Real 3D Environment Construction ---
+            // Wall/Floor PBR Material Simulation
+            const floorMat = new BABYLON.GridMaterial("floorMat", scene);
+            floorMat.mainColor = new BABYLON.Color3(0.1, 0.1, 0.12);
+            floorMat.lineColor = new BABYLON.Color3(0.2, 0.2, 0.25);
+            floorMat.gridRatio = 2;
+
+            const wallMat = new BABYLON.StandardMaterial("wallMat", scene);
+            wallMat.diffuseColor = new BABYLON.Color3(0.15, 0.12, 0.12);
+            wallMat.roughness = 0.8;
+
+            // Floor
+            const floor = BABYLON.MeshBuilder.CreateGround("floor", { width: 40, height: 40 }, scene);
+            floor.material = floorMat;
+
+            // Ceiling
+            const ceiling = BABYLON.MeshBuilder.CreateGround("ceiling", { width: 40, height: 40 }, scene);
+            ceiling.position.y = 4;
+            ceiling.rotation.x = Math.PI;
+            ceiling.material = wallMat;
+
+            // Horror Mansion Corridor Walls
+            const createWall = (x, z, w, d) => {
+                let wall = BABYLON.MeshBuilder.CreateBox("wall", { width: w, height: 4, depth: d }, scene);
+                wall.position = new BABYLON.Vector3(x, 2, z);
+                wall.material = wallMat;
+                return wall;
+            };
+
+            createWall(0, 20, 40, 1);
+            createWall(0, -20, 40, 1);
+            createWall(20, 0, 1, 40);
+            createWall(-20, 0, 1, 40);
+            
+            // Interior Obstacles / Rooms
+            createWall(-8, 5, 1, 15);
+            createWall(8, -5, 1, 15);
+
+            // --- Martial Arts Hands Mesh (FPS View) ---
+            const fistMat = new BABYLON.StandardMaterial("fistMat", scene);
+            fistMat.diffuseColor = new BABYLON.Color3(0.4, 0.25, 0.2);
+
+            const rightFist = BABYLON.MeshBuilder.CreateBox("rightFist", { width: 0.15, height: 0.15, depth: 0.3 }, scene);
+            rightFist.position = new BABYLON.Vector3(0.35, -0.25, 0.6);
+            rightFist.parent = camera;
+            rightFist.material = fistMat;
+
+            // --- Demon Entity (Ghost Enemy) ---
+            const enemyMat = new BABYLON.StandardMaterial("enemyMat", scene);
+            enemyMat.diffuseColor = new BABYLON.Color3(0.05, 0, 0);
+            enemyMat.emissiveColor = new BABYLON.Color3(0.3, 0, 0);
+
+            const ghost = BABYLON.MeshBuilder.CreateSphere("ghost", { diameterX: 0.9, diameterY: 2.0, diameterZ: 0.9 }, scene);
+            ghost.position = new BABYLON.Vector3(0, 1, 12);
+            ghost.material = enemyMat;
+
+            // Ghost Eyes (Glowing Red)
+            const eyeMat = new BABYLON.StandardMaterial("eyeMat", scene);
+            eyeMat.emissiveColor = new BABYLON.Color3(1, 0, 0);
+            
+            const leftEye = BABYLON.MeshBuilder.CreateSphere("eye1", { diameter: 0.12 }, scene);
+            leftEye.position = new BABYLON.Vector3(-0.2, 0.5, -0.4);
+            leftEye.parent = ghost;
+            leftEye.material = eyeMat;
+
+            const rightEye = BABYLON.MeshBuilder.CreateSphere("eye2", { diameter: 0.12 }, scene);
+            rightEye.position = new BABYLON.Vector3(0.2, 0.5, -0.4);
+            rightEye.parent = ghost;
+            rightEye.material = eyeMat;
+
+            return { scene, camera, flashlight, rightFist, ghost };
+        };
+
+        const game = createScene();
+        let { scene, camera, flashlight, rightFist, ghost } = game;
+
+        // --- Touch Control Variables for Vivo Mobile ---
+        let joyX = 0, joyY = 0;
+        let isTouchingJoystick = false;
+        let joyTouchId = null;
+
+        const joystickZone = document.getElementById("joystickZone");
+        const joystickKnob = document.getElementById("joystickKnob");
+        const cameraZone = document.getElementById("cameraZone");
+
+        // Touch Joystick Logic
+        joystickZone.addEventListener("touchstart", (e) => {
+            AudioFX.init();
+            let touch = e.changedTouches[0];
+            joyTouchId = touch.identifier;
+            isTouchingJoystick = true;
+        });
+
+        window.addEventListener("touchmove", (e) => {
+            for (let i = 0; i < e.touches.length; i++) {
+                let touch = e.touches[i];
+                if (touch.identifier === joyTouchId) {
+                    let rect = joystickZone.getBoundingClientRect();
+                    let centerX = rect.left + rect.width / 2;
+                    let centerY = rect.top + rect.height / 2;
+                    
+                    let deltaX = touch.clientX - centerX;
+                    let deltaY = touch.clientY - centerY;
+                    let dist = Math.min(Math.hypot(deltaX, deltaY), 45);
+                    let angle = Math.atan2(deltaY, deltaX);
+
+                    joyX = (Math.cos(angle) * dist) / 45;
+                    joyY = (Math.sin(angle) * dist) / 45;
+
+                    joystickKnob.style.transform = `translate(${joyX * 30}px, ${joyY * 30}px)`;
+                }
+            }
+        });
+
+        const resetJoystick = (e) => {
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                if (e.changedTouches[i].identifier === joyTouchId) {
+                    joyX = 0; joyY = 0;
+                    isTouchingJoystick = false;
+                    joyTouchId = null;
+                    joystickKnob.style.transform = `translate(0px, 0px)`;
+                }
+            }
+        };
+        window.addEventListener("touchend", resetJoystick);
+        window.addEventListener("touchcancel", resetJoystick);
+
+        // Right Screen Look Drag Logic
+        let lastTouchX = 0, lastTouchY = 0;
+        cameraZone.addEventListener("touchstart", (e) => {
+            AudioFX.init();
+            let touch = e.changedTouches[0];
+            lastTouchX = touch.clientX;
+            lastTouchY = touch.clientY;
+        });
+
+        cameraZone.addEventListener("touchmove", (e) => {
+            let touch = e.changedTouches[0];
+            let dx = touch.clientX - lastTouchX;
+            let dy = touch.clientY - lastTouchY;
+
+            camera.rotation.y += dx * 0.005;
+            camera.rotation.x += dy * 0.005;
+            camera.rotation.x = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, camera.rotation.x));
+
+            lastTouchX = touch.clientX;
+            lastTouchY = touch.clientY;
+        });
+
+        // --- Action Buttons Mechanics ---
+        // 1. Kung Fu Strike
+        let isAttacking = false;
+        document.getElementById("btnKungFu").addEventListener("touchstart", (e) => {
+            e.preventDefault();
+            AudioFX.init();
+            if (isAttacking) return;
+            isAttacking = true;
+            AudioFX.playKungFuSwing();
+
+            // Punch recoil animation
+            let anim = 0;
+            let punchInterval = setInterval(() => {
+                anim += 0.2;
+                rightFist.position.z = 0.6 + Math.sin(anim * Math.PI) * 0.5;
+                rightFist.position.x = 0.35 - Math.sin(anim * Math.PI) * 0.2;
+
+                if (anim >= 1.0) {
+                    clearInterval(punchInterval);
+                    rightFist.position.set(0.35, -0.25, 0.6);
+                    isAttacking = false;
+                }
+            }, 20);
+
+            // Check kung fu hit against ghost entity
+            let distToGhost = BABYLON.Vector3.Distance(camera.position, ghost.position);
+            if (distToGhost < 2.8) {
+                AudioFX.playHitSound();
+                // Knockback the ghost backwards
+                let pushDir = ghost.position.subtract(camera.position).normalize();
+                ghost.position.addInPlace(pushDir.scale(3.0));
+            }
+        });
+
+        // 2. Jump System
+        let isJumping = false;
+        document.getElementById("btnJump").addEventListener("touchstart", (e) => {
+            e.preventDefault();
+            AudioFX.init();
+            if (isJumping) return;
+            isJumping = true;
+            let jumpVel = 0.15;
+            let jumpInterval = setInterval(() => {
+                camera.position.y += jumpVel;
+                jumpVel -= 0.015;
+                if (camera.position.y <= 1.7) {
+                    camera.position.y = 1.7;
+                    isJumping = false;
+                    clearInterval(jumpInterval);
+                }
+            }, 20);
+        });
+
+        // 3. Flashlight Toggle
+        document.getElementById("btnFlashlight").addEventListener("touchstart", (e) => {
+            e.preventDefault();
+            AudioFX.init();
+            AudioFX.playFlashlightClick();
+            flashlight.enabled = !flashlight.enabled;
+        });
+
+        // --- Main Game Engine Loop ---
+        engine.runRenderLoop(function () {
+            // Apply Movement from Virtual Joystick
+            if (Math.abs(joyX) > 0.05 || Math.abs(joyY) > 0.05) {
+                let speed = 0.08;
+                let forward = camera.getDirection(BABYLON.Axis.Z);
+                let right = camera.getDirection(BABYLON.Axis.X);
+
+                forward.y = 0; right.y = 0;
+                forward.normalize(); right.normalize();
+
+                let moveVector = forward.scale(-joyY * speed).add(right.scale(joyX * speed));
+                camera.position.addInPlace(moveVector);
+            }
+
+            // Simple boundary wall collision protection
+            camera.position.x = Math.max(-19, Math.min(19, camera.position.x));
+            camera.position.z = Math.max(-19, Math.min(19, camera.position.z));
+
+            // Ghost AI Tracking Logic
+            let ghostDir = camera.position.subtract(ghost.position);
+            ghostDir.y = 0;
+            let dist = ghostDir.length();
+            
+            if (dist > 0.8) {
+                ghostDir.normalize();
+                ghost.position.addInPlace(ghostDir.scale(0.035)); // Ghost speed
+                ghost.lookAt(new BABYLON.Vector3(camera.position.x, ghost.position.y, camera.position.z));
+            } else {
+                // Jumpscare / Game Over
+                document.getElementById("jumpscare").style.display = "flex";
+                engine.stopRenderLoop();
+            }
+
+            scene.render();
+        });
+
+        window.addEventListener("resize", function () {
+            engine.resize();
+        });
+    </script>
+</body>
+  </html>
+  
